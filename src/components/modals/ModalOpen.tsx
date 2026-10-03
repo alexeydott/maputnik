@@ -10,6 +10,13 @@ import { InputUrl } from "../InputUrl";
 
 import { ensureStyleValidity } from "../../libs/style";
 import publicStyles from "../../config/styles.json";
+import {
+  buildStyleFromTileJson,
+  fetchJson,
+  getCapabilitiesUrl,
+  getTileJsonUrl,
+  normalizeServerUrl,
+} from "../../libs/tegola";
 
 type PublicStyleProps = {
   url: string
@@ -55,6 +62,11 @@ type ModalOpenState = {
   error?: string | null
   activeRequest?: any
   activeRequestUrl?: string | null
+  tegolaServerUrl: string
+  tegolaMaps: Array<{ name: string }> | null
+  tegolaSelectedMap: string | null
+  tegolaTileJson: any | null
+  tegolaLoading: boolean
 };
 
 class ModalOpenInternal extends React.Component<ModalOpenInternalProps, ModalOpenState> {
@@ -65,6 +77,11 @@ class ModalOpenInternal extends React.Component<ModalOpenInternalProps, ModalOpe
     this.state = {
       styleUrl: "",
       isDragOver: false,
+      tegolaServerUrl: "",
+      tegolaMaps: null,
+      tegolaSelectedMap: null,
+      tegolaTileJson: null,
+      tegolaLoading: false,
     };
   }
 
@@ -204,6 +221,10 @@ class ModalOpenInternal extends React.Component<ModalOpenInternalProps, ModalOpe
     this.setState({
       styleUrl: "",
       isDragOver: false,
+      tegolaMaps: null,
+      tegolaSelectedMap: null,
+      tegolaTileJson: null,
+      tegolaLoading: false,
     });
     this.clearError();
     this.props.onOpenToggle();
@@ -246,6 +267,168 @@ class ModalOpenInternal extends React.Component<ModalOpenInternalProps, ModalOpe
       styleUrl: url,
     });
   };
+
+  onTegolaServerUrlChange = (url: string) => {
+    this.setState({
+      tegolaServerUrl: url,
+    });
+  };
+
+  onTegolaConnect = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    this.clearError();
+    const serverUrl = normalizeServerUrl(this.state.tegolaServerUrl);
+    if (!serverUrl) {
+      return;
+    }
+    this.setState({
+      tegolaLoading: true,
+      tegolaMaps: null,
+      tegolaSelectedMap: null,
+      tegolaTileJson: null,
+    });
+    try {
+      const data = await fetchJson(getCapabilitiesUrl(serverUrl));
+      const maps = (data.maps || []).map((m: any) => ({ name: m.name }));
+      this.setState({
+        tegolaMaps: maps,
+        tegolaServerUrl: serverUrl,
+        tegolaLoading: false,
+      });
+    } catch (err) {
+      this.setState({
+        error: `Tegola: failed to load capabilities from '${serverUrl}': ${(err as Error).message}`,
+        tegolaLoading: false,
+      });
+    }
+  };
+
+  onTegolaSelectMap = async (mapName: string) => {
+    this.clearError();
+    const serverUrl = normalizeServerUrl(this.state.tegolaServerUrl);
+    this.setState({
+      tegolaLoading: true,
+      tegolaSelectedMap: mapName,
+      tegolaTileJson: null,
+    });
+    try {
+      const tileJson = await fetchJson(getTileJsonUrl(serverUrl, mapName));
+      this.setState({
+        tegolaTileJson: tileJson,
+        tegolaLoading: false,
+      });
+    } catch (err) {
+      this.setState({
+        error: `Tegola: failed to load TileJSON for map '${mapName}': ${(err as Error).message}`,
+        tegolaLoading: false,
+      });
+    }
+  };
+
+  onTegolaOpen = () => {
+    this.clearError();
+    const serverUrl = normalizeServerUrl(this.state.tegolaServerUrl);
+    const mapName = this.state.tegolaSelectedMap;
+    const tileJson = this.state.tegolaTileJson;
+    if (!mapName || !tileJson) {
+      return;
+    }
+    try {
+      const style = buildStyleFromTileJson(serverUrl, mapName, tileJson);
+      const mapStyle = ensureStyleValidity(style);
+      console.log("Created style from tegola map ", mapName);
+      this.props.onStyleOpen(mapStyle);
+      this.onOpenToggle();
+    } catch (err) {
+      this.setState({
+        error: `Tegola: failed to build style: ${(err as Error).message}`,
+      });
+    }
+  };
+
+  renderTegolaSection() {
+    const t = this.props.t;
+    const { tegolaServerUrl, tegolaMaps, tegolaSelectedMap, tegolaTileJson, tegolaLoading } = this.state;
+
+    let mapsElement = null;
+    if (tegolaMaps) {
+      if (tegolaMaps.length === 0) {
+        mapsElement = <p>{t("No maps found on this server.")}</p>;
+      } else {
+        mapsElement = (
+          <div>
+            {tegolaMaps.map(m => (
+              <div key={m.name} style={{ marginBottom: 4 }}>
+                <InputButton
+                  data-wd-key={`modal:open.tegola.map.${m.name}`}
+                  className={tegolaSelectedMap === m.name ? "maputnik-big-button" : ""}
+                  aria-label={m.name}
+                  onClick={() => void this.onTegolaSelectMap(m.name)}
+                >{m.name}</InputButton>
+              </div>
+            ))}
+          </div>
+        );
+      }
+    }
+
+    let mapDetailElement = null;
+    if (tegolaTileJson && tegolaSelectedMap) {
+      const vectorLayers = tegolaTileJson.vector_layers || [];
+      mapDetailElement = (
+        <div style={{ marginTop: 8 }}>
+          <p>{t("Map")}: <strong>{tegolaSelectedMap}</strong> — {t("{{count}} vector layers", { count: vectorLayers.length })}</p>
+          <ul>
+            {vectorLayers.map((l: any) => (
+              <li key={l.id}>
+                {l.id}
+                {(l.minzoom !== undefined || l.maxzoom !== undefined) &&
+                  ` (z${l.minzoom ?? 0}–${l.maxzoom ?? 22})`}
+              </li>
+            ))}
+          </ul>
+          <InputButton
+            data-wd-key="modal:open.tegola.open"
+            className="maputnik-big-button"
+            onClick={this.onTegolaOpen}
+          >{t("Open in Style Editor")}</InputButton>
+        </div>
+      );
+    }
+
+    return (
+      <section className="maputnik-modal-section">
+        <form onSubmit={this.onTegolaConnect}>
+          <h1>{t("Tegola")}</h1>
+          <p>
+            <Trans t={t}>
+              Connect to a <a href="https://tegola.io" target="_blank" rel="noopener noreferrer">Tegola</a> vector tile server to edit styles for its maps.
+            </Trans>
+          </p>
+          <InputUrl
+            aria-label={t("Tegola server URL")}
+            data-wd-key="modal:open.tegola.url.input"
+            type="text"
+            className="maputnik-input"
+            default={t("Enter server URL...")}
+            value={tegolaServerUrl}
+            onInput={this.onTegolaServerUrlChange}
+            onChange={this.onTegolaServerUrlChange}
+          />
+          <div>
+            <InputButton
+              data-wd-key="modal:open.tegola.connect.button"
+              type="submit"
+              className="maputnik-big-button"
+              disabled={tegolaServerUrl.length < 1 || tegolaLoading}
+            >{tegolaLoading ? t("Loading...") : t("Connect")}</InputButton>
+          </div>
+        </form>
+        {mapsElement}
+        {mapDetailElement}
+      </section>
+    );
+  }
 
   render() {
     const t = this.props.t;
@@ -341,6 +524,8 @@ class ModalOpenInternal extends React.Component<ModalOpenInternalProps, ModalOpe
               </div>
             </form>
           </section>
+
+          {this.renderTegolaSection()}
 
           <section className="maputnik-modal-section maputnik-modal-section--shrink">
             <h1>{t("Gallery Styles")}</h1>
