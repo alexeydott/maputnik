@@ -504,7 +504,7 @@ class ModalOpenInternal extends React.Component<ModalOpenInternalProps, ModalOpe
             >{t("Open blank style with Yandex basemap")}</InputButton>
           </div>
           <p style={{ fontSize: "0.9em" }}>
-            {t("Tip: paste the key here once — the Tegola section above will then add the basemap underneath automatically.")}
+            {t("Tip — paste the key here once, the Tegola section above will then add the basemap underneath automatically.")}
           </p>
         </form>
       </section>

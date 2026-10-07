@@ -12,6 +12,7 @@ export const supportedLanguages = {
   "it": "Italiano",
   "ja": "日本語",
   "ko": "한국어",
+  "ru": "Русский",
   "tr": "Türkçe",
   "zh": "简体中文"
 } as const;
