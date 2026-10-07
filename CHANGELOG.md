@@ -7,6 +7,7 @@
 - Exported HTML now loads MapLibre GL JS as an ES module, since v6 no longer ships a UMD bundle
 - Add `font-faces`, `sky`, `roll` and `centerAltitude` to the style settings modal
 - The sidebar can now be resized, both as a whole and in the split between the layer list and the layer editor
+- Add a "Yandex basemap" section to the Open dialog: enter a free Yandex Maps Tiles API key to open a blank style with the raster basemap, or have it added automatically underneath when opening a Tegola map
 - _...Add new stuff here..._
 
 ### 🐞 Bug fixes

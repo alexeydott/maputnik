@@ -17,6 +17,10 @@ import {
   getTileJsonUrl,
   normalizeServerUrl,
 } from "../../libs/tegola";
+import {
+  addYandexBasemap,
+  buildBlankStyleWithBasemap,
+} from "../../libs/yandex";
 
 type PublicStyleProps = {
   url: string
@@ -67,6 +71,7 @@ type ModalOpenState = {
   tegolaSelectedMap: string | null
   tegolaTileJson: any | null
   tegolaLoading: boolean
+  yandexApiKey: string
 };
 
 class ModalOpenInternal extends React.Component<ModalOpenInternalProps, ModalOpenState> {
@@ -82,6 +87,7 @@ class ModalOpenInternal extends React.Component<ModalOpenInternalProps, ModalOpe
       tegolaSelectedMap: null,
       tegolaTileJson: null,
       tegolaLoading: false,
+      yandexApiKey: "",
     };
   }
 
@@ -334,7 +340,12 @@ class ModalOpenInternal extends React.Component<ModalOpenInternalProps, ModalOpe
       return;
     }
     try {
-      const style = buildStyleFromTileJson(serverUrl, mapName, tileJson);
+      let style = buildStyleFromTileJson(serverUrl, mapName, tileJson);
+      const yandexKey = this.state.yandexApiKey.trim();
+      if (yandexKey) {
+        style = addYandexBasemap(style, yandexKey);
+        console.log("Added Yandex basemap underneath tegola layers");
+      }
       const mapStyle = ensureStyleValidity(style);
       console.log("Created style from tegola map ", mapName);
       this.props.onStyleOpen(mapStyle);
@@ -342,6 +353,32 @@ class ModalOpenInternal extends React.Component<ModalOpenInternalProps, ModalOpe
     } catch (err) {
       this.setState({
         error: `Tegola: failed to build style: ${(err as Error).message}`,
+      });
+    }
+  };
+
+  onYandexApiKeyChange = (apiKey: string) => {
+    this.setState({
+      yandexApiKey: apiKey,
+    });
+  };
+
+  onYandexOpen = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    this.clearError();
+    const apiKey = this.state.yandexApiKey.trim();
+    if (!apiKey) {
+      return;
+    }
+    try {
+      const style = buildBlankStyleWithBasemap(apiKey);
+      const mapStyle = ensureStyleValidity(style);
+      console.log("Created blank style with Yandex basemap");
+      this.props.onStyleOpen(mapStyle);
+      this.onOpenToggle();
+    } catch (err) {
+      this.setState({
+        error: `Yandex basemap: failed to build style: ${(err as Error).message}`,
       });
     }
   };
@@ -392,6 +429,11 @@ class ModalOpenInternal extends React.Component<ModalOpenInternalProps, ModalOpe
             className="maputnik-big-button"
             onClick={this.onTegolaOpen}
           >{t("Open in Style Editor")}</InputButton>
+          {this.state.yandexApiKey.trim() && (
+            <p style={{ marginTop: 4, fontSize: "0.9em" }}>
+              {t("Yandex API key is set — the basemap will be added underneath.")}
+            </p>
+          )}
         </div>
       );
     }
@@ -426,6 +468,45 @@ class ModalOpenInternal extends React.Component<ModalOpenInternalProps, ModalOpe
         </form>
         {mapsElement}
         {mapDetailElement}
+      </section>
+    );
+  }
+
+  renderYandexSection() {
+    const t = this.props.t;
+    const { yandexApiKey } = this.state;
+
+    return (
+      <section className="maputnik-modal-section">
+        <form onSubmit={this.onYandexOpen}>
+          <h1>{t("Yandex basemap")}</h1>
+          <p>
+            <Trans t={t}>
+              Add the free <a href="https://yandex.ru/maps-api/products/tiles-api" target="_blank" rel="noopener noreferrer">Yandex Maps Tiles API</a> raster basemap (0 &#8381;, up to 30 req/s) underneath your style. Get the API key in the Yandex developer cabinet ("&#1055;&#1086;&#1076;&#1082;&#1083;&#1102;&#1095;&#1080;&#1090;&#1100; API" &rarr; Tiles API). Attribution &copy; &#1071;&#1085;&#1076;&#1077;&#1082;&#1089; is required and stays visible.
+            </Trans>
+          </p>
+          <InputUrl
+            aria-label={t("Yandex API key")}
+            data-wd-key="modal:open.yandex.key.input"
+            type="text"
+            className="maputnik-input"
+            default={t("Enter Yandex API key...")}
+            value={yandexApiKey}
+            onInput={this.onYandexApiKeyChange}
+            onChange={this.onYandexApiKeyChange}
+          />
+          <div>
+            <InputButton
+              data-wd-key="modal:open.yandex.open.button"
+              type="submit"
+              className="maputnik-big-button"
+              disabled={yandexApiKey.trim().length < 1}
+            >{t("Open blank style with Yandex basemap")}</InputButton>
+          </div>
+          <p style={{ fontSize: "0.9em" }}>
+            {t("Tip: paste the key here once — the Tegola section above will then add the basemap underneath automatically.")}
+          </p>
+        </form>
       </section>
     );
   }
@@ -526,6 +607,8 @@ class ModalOpenInternal extends React.Component<ModalOpenInternalProps, ModalOpe
           </section>
 
           {this.renderTegolaSection()}
+
+          {this.renderYandexSection()}
 
           <section className="maputnik-modal-section maputnik-modal-section--shrink">
             <h1>{t("Gallery Styles")}</h1>
